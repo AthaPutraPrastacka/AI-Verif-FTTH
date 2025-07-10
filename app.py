@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import os
+import io
 from main import process_verification # Impor fungsi inti dari main.py
 
 # Konfigurasi halaman
 st.set_page_config(page_title="AI Verif Dokumen", layout="wide")
 
 # Judul Aplikasi
-st.title("🤖 AI Verifikasi Kelengkapan Dokumen")
+st.title("AI Verifikasi Kelengkapan Dokumen")
 st.write("Upload satu file PDF gabungan untuk diperiksa kelengkapannya secara otomatis.")
 
 # 1. WIDGET UPLOAD FILE
@@ -24,42 +25,49 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
 
     # Jalankan proses verifikasi saat tombol ditekan
-    if st.button("Mulai Verifikasi Sekarang"):
-        # Tampilkan indikator loading
-        with st.spinner("AI sedang bekerja... Menganalisis halaman, memeriksa tanda tangan... Mohon tunggu..."):
-            # Panggil fungsi inti dari main.py
-            results = process_verification(temp_pdf_path)
-        
-        st.success("Verifikasi Selesai!")
+    # Di dalam file app.py
 
-        # 2. TAMPILKAN HASIL DALAM BENTUK TABEL
-        st.subheader("Laporan Hasil Verifikasi")
-        
+if st.button("Mulai Verifikasi Sekarang", type="primary"):
+    with st.spinner('AI sedang bekerja... Menganalisis dokumen...'):
+        # Panggil fungsi inti yang sekarang mengembalikan 3 nilai
+        results, score, level = process_verification(temp_pdf_path)
+
+    st.success("Verifikasi Selesai!")
+
+    # --- Tampilkan Skor (Bagian Baru) ---
+    st.header(f" Skor Integritas Dokumen: {score:.2f}%")
+    
+    # Beri warna berdasarkan level
+    if level == "SANGAT TINGGI":
+        st.info(f"**Level Kepatuhan: {level}**")
+    elif level == "BAIK":
+        st.success(f"**Level Kepatuhan: {level}**")
+    elif level == "PERLU PERHATIAN":
+        st.warning(f"**Level Kepatuhan: {level}**")
+    else:
+        st.error(f"**Level Kepatuhan: {level}**")
+
+    st.progress(int(score))
+
+    # --- Tampilkan Laporan Detail (tidak berubah) ---
+    st.header("Laporan Hasil Verifikasi Detail")
+    if results:
         df_results = pd.DataFrame(results)
-        # Ubah nama kolom agar lebih rapi
-        df_display = df_results.rename(columns={'no': 'No.','kategori': 'Kategori','char': 'Sub','name': 'Item','status': 'Status','keterangan': 'Keterangan'})
-        st.dataframe(df_display) # st.dataframe lebih interaktif dari st.table
+        df_display = df_results.rename(columns={'no': 'No.', 'kategori': 'Kategori', 'char': 'Sub', 'name': 'Item', 'status': 'Status', 'keterangan': 'Keterangan'})
+        st.dataframe(df_display.drop(columns=['id']), use_container_width=True) # Sembunyikan kolom 'id'
 
-        # 3. BUAT DATA UNTUK TOMBOL DOWNLOAD EXCEL
-        # Siapkan file Excel dalam format bytes untuk di-download
-        output_excel_filename = f"{os.path.splitext(uploaded_file.name)[0]}_Report.xlsx"
-        df_excel = df_display[['No.', 'Kategori', 'Sub', 'Item', 'Status', 'Keterangan']]
-        
-        # Simpan ke memori (BytesIO buffer)
-        from io import BytesIO
-        output = BytesIO()
+        # Tombol Download Excel (tidak berubah)
+        output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_excel.to_excel(writer, index=False, sheet_name='Laporan Verifikasi')
+            df_display.to_excel(writer, index=False, sheet_name='LaporanVerifikasi')
         
-        excel_data = output.getvalue()
-
-        # WIDGET TOMBOL DOWNLOAD
         st.download_button(
-            label="✅ Download Laporan sebagai Excel",
-            data=excel_data,
-            file_name=output_excel_filename,
+            label="Download Laporan sebagai Excel",
+            data=output.getvalue(),
+            file_name=f"Laporan_{os.path.splitext(uploaded_file.name)[0]}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+    else:
+        st.error("Tidak ada hasil yang dapat ditampilkan.")
     
-    # Hapus file sementara setelah selesai
-    # os.remove(temp_pdf_path) # Anda bisa aktifkan ini jika sudah production
+    os.remove(temp_pdf_path)
